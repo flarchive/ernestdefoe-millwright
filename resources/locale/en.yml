@@ -1,0 +1,153 @@
+ernestdefoe-millwright:
+  admin:
+    tab_installed: "Installed ({count})"
+    tab_host: This host
+    enabled: enabled
+    disabled: disabled
+    version_unknown: version unknown
+
+    # 🚨 "A newer version exists" — never "an update is available". The cheap
+    # check knows the first and cannot know the second, and a badge that
+    # overstates itself is one people stop reading.
+    none_newer: Everything checkable is up to date.
+    some_newer: "{count} package(s) have a newer version."
+    checked_ago: "Checked {when}."
+    never_checked: Not checked yet.
+    uncheckable: "{count} could not be checked — they are not on Packagist."
+    check_now: Check now
+    checking: Checking…
+
+    banner_title: "{count} package(s) have a newer version"
+    banner_body: >-
+      That does not always mean you can install it — what else has to change, and
+      whether anything blocks it, is worked out when you ask.
+    banner_checked: "Last checked {when}."
+    banner_uncheckable: "{count} package(s) could not be checked at all."
+    banner_open: Take a look
+    banner_dismiss: Not now
+    ago_minutes: "{count} minutes ago"
+    ago_hours: "{count} hours ago"
+    ago_days: "{count} days ago"
+
+    # 🚨 "Update", never "Upgrade". An upgrade sounds like a decision; an update
+    # sounds like maintenance, and this is maintenance.
+    update: Update
+    update_all: "Update all {count}"
+    starting: Starting…
+    start_failed: >-
+      The update could not be started, and the forum did not say why. Nothing has
+      changed.
+
+    path_install: local checkout
+    path_install_why: >-
+      This extension is a symlink into a directory on this server, so it is
+      probably one you are working on. Millwright will not replace it — update it
+      with git instead.
+
+    run_working: Updating
+    run_done: Update finished
+    run_failed: The update stopped
+    run_rolled_back: Put back the way it was
+
+    phase_plan: Working out what changes
+    phase_fetch: Downloading
+    phase_apply: Swapping files in
+    phase_finalise: Finishing up
+
+    working_out: Asking Composer what this involves. This is the slow part.
+    working_on: "{item} — {index} of {total}"
+
+    failed_at: "It stopped during: {step}"
+    roll_back: Put everything back
+    rolling_back: Putting everything back…
+    rollback_failed: >-
+      The rollback itself failed. Nothing was deleted at any point, so the old
+      files are still under storage/millwright/trash.
+    dismiss: Dismiss
+
+    # 🚨 Each of these says what IS happening, not just that something is wrong.
+    # A message that only signals trouble is how somebody ends up refreshing a
+    # page for ten minutes.
+    another_driver: >-
+      A background worker is doing the next step, so this page is just watching.
+    nothing_moved: >-
+      Nothing has moved for a couple of minutes. That is normal while Composer is
+      working something out; if it stays like this, the log below is the place to
+      look.
+    poll_failing: >-
+      This page has failed to reach the forum {count} times in a row. The update
+      itself is unaffected — it keeps its place on disk — and this will keep
+      trying.
+
+    tab_discover: Find extensions
+
+    search: Search
+    searching: Searching…
+    discover_placeholder: Search Packagist for a Flarum extension
+    discover_hint: >-
+      Searches every Flarum extension published on Packagist.
+    # 🚨 Against the version this forum RUNS, not against "Flarum 2". A forum on
+    # 2.0.0 and one on 2.1.0 get different answers, and saying which version was
+    # used is what makes the badge checkable.
+    discover_against: "Checked against the Flarum {version} this forum runs."
+    discover_none: "Nothing on Packagist matches “{query}”."
+    discover_failed: >-
+      The search could not be run. Packagist may be unreachable from this server.
+
+    downloads: "{count} downloads"
+    install: Install
+    already_installed: installed
+    abandoned: abandoned by its author
+
+    # 🚨 "Says it works", never "works". A declared constraint is the author's
+    # claim; whether the rest of this site allows it is a question only the plan
+    # can answer, and it is answered when Install is pressed.
+    compat_no: not for this Flarum
+    compat_no_why: "Its newest release asks for flarum/core {requires}."
+    compat_unknown: could not check
+    compat_prerelease: "{version} — a pre-release"
+    abandoned_why: >-
+      Its author has marked it as no longer maintained. It may still work.
+    abandoned_for: "Its author says to use {replacement} instead."
+
+    core_title: Flarum itself
+    core_loading: Checking Flarum…
+    core_running: "This forum runs Flarum {version}."
+    core_current: No newer Flarum has been published since the last check.
+    core_update_to: "Update Flarum to {version}"
+    core_failed: >-
+      Millwright could not work out what upgrading Flarum would involve. Nothing
+      has changed.
+
+    # 🚨 Stated as a consequence, never as a bare count. "3 extensions" is a
+    # number; "the upgrade would be refused" is the thing somebody needs to know,
+    # and it is why the button is disabled.
+    core_blocked: >-
+      {count} extension(s) have no release that works with Flarum {version}, so
+      the upgrade would be refused. They are listed below.
+    core_clear: "Every installed extension has a release that works with Flarum {version}."
+    core_updating_too: >-
+      {count} extension(s) will be updated at the same time, because their current
+      version does not support the new Flarum.
+    core_checking: "Checking {count} more extension(s)…"
+
+    core_row_blocked: "no release for this Flarum — asks for {requires}"
+    core_row_updating: "will update to {version}"
+    core_row_unknown: could not be checked
+
+    remove: Remove
+    remove_confirm: >-
+      Remove {name} from this site? Its files are kept, so this can be undone —
+      but its settings and any data it stores are left alone either way.
+
+    # 🚨 A spinner with no end is the failure this extension replaces. If the
+    # page cannot load, it says so and offers the one useful action.
+    load_failed: >-
+      Millwright could not load. Its API did not answer — check the browser
+      console and your forum's error log for what went wrong.
+    load_timeout: >-
+      Millwright's own page did not finish loading. Nothing is wrong with your
+      site or your extensions; something is stopping this page talking to the
+      forum. The browser console will say what.
+    try_again: Try again
+
