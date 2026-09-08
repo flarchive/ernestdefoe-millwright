@@ -1,0 +1,409 @@
+/* Millwright admin. Card grid rather than a list, because that is the shape
+ * people already know from Extension Manager and there is no value in making
+ * them relearn where things are. */
+.Millwright-grid {
+  /* 🚨 auto-FIT, not auto-fill: with three extensions installed the cards should
+   * fill the row rather than sit at their minimum width beside empty tracks. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+  grid-auto-rows: max-content;
+  gap: 16px;
+}
+
+.Millwright-card {
+  border: 1px solid var(--control-bg);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--body-bg);
+}
+
+.Millwright-cardTop { display: flex; gap: 12px; align-items: flex-start; }
+
+.Millwright-icon {
+  width: 40px; height: 40px; border-radius: 10px; flex: none;
+  display: grid; place-items: center; color: #fff; font-size: 17px;
+}
+
+.Millwright-name { font-weight: 700; font-size: 15px; line-height: 1.3; }
+.Millwright-pkg {
+  font-family: var(--code-font, monospace);
+  font-size: 11.5px; color: var(--muted-color); word-break: break-all;
+}
+.Millwright-meta {
+  font-family: var(--code-font, monospace);
+  font-size: 11px; color: var(--muted-color);
+  display: flex; flex-wrap: wrap; gap: 4px 10px;
+}
+.Millwright-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border-top: 1px solid var(--control-bg); padding-top: 11px; margin-top: auto;
+}
+
+.Millwright-tag {
+  display: inline-block; font-family: var(--code-font, monospace);
+  font-size: 11px; padding: 2px 7px; border-radius: 20px;
+  background: var(--control-bg); color: var(--muted-color);
+}
+.Millwright-tag--ok { background: rgba(15,115,96,.12); color: #0f7360; }
+.Millwright-tag--warn { background: rgba(138,90,0,.14); color: #8a5a00; }
+
+/* The host panel — the thing the current tooling has no equivalent of. */
+.Millwright-host { margin-bottom: 24px; }
+.Millwright-summary {
+  border: 1px solid var(--control-bg);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 18px; margin-bottom: 16px;
+}
+.Millwright-summary h3 { margin: 0 0 4px; font-size: 16px; }
+.Millwright-summary p { margin: 0; color: var(--muted-color); max-width: 68ch; }
+
+.Millwright-checks {
+  display: grid; gap: 1px; background: var(--control-bg);
+  border: 1px solid var(--control-bg); border-radius: 11px; overflow: hidden;
+}
+.Millwright-check {
+  background: var(--body-bg); padding: 13px 16px;
+  display: grid; grid-template-columns: 24px 1fr; gap: 12px; align-items: start;
+}
+.Millwright-check-what { font-weight: 600; }
+.Millwright-check-why { color: var(--muted-color); font-size: 13px; margin-top: 2px; max-width: 70ch; }
+
+.Millwright-notice {
+  border: 1px solid var(--control-bg);
+  border-radius: 10px; padding: 14px 18px; margin-bottom: 22px;
+  color: var(--muted-color);
+}
+
+/* The dashboard banner. Deliberately quiet: it is information, not an alarm —
+ * an update existing is not an emergency, and styling it like one is how a
+ * notice becomes something people click past without reading. */
+.Millwright-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--control-bg);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  background: var(--body-bg);
+}
+
+.Millwright-banner-title { font-weight: 700; }
+.Millwright-banner-body { color: var(--muted-color); font-size: 13px; max-width: 74ch; }
+.Millwright-banner-actions { display: flex; gap: 8px; align-items: center; }
+
+.Millwright-count {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 0 7px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--control-bg);
+  color: var(--muted-color);
+}
+.Button--primary .Millwright-count { background: rgba(255,255,255,.24); color: #fff; }
+
+.Millwright-checkline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted-color);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+// ── A run in progress ────────────────────────────────────────────────────────
+//
+// 🚨 Deliberately plain. This panel is read while somebody is anxious about
+// their site, so nothing here animates, pulses, or draws the eye away from the
+// two things that matter: which step it is on, and what the log says.
+
+.Millwright-run {
+  border: 1px solid var(--control-bg);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 24px;
+  background: var(--body-bg);
+}
+
+.Millwright-run--failed { border-color: var(--alert-error-color, #d95a4e); }
+
+.Millwright-runHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+
+  h3 { margin: 0; font-size: 16px; }
+}
+
+.Millwright-driver { color: var(--muted-color); font-size: 12px; max-width: 52ch; }
+
+.Millwright-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  font-size: 12px;
+
+  .Millwright-phase {
+    color: var(--muted-color);
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: var(--control-bg);
+
+    // The phase being worked on reads first; finished ones stay legible rather
+    // than fading out, because "what has already happened" is what somebody
+    // checks when something goes wrong.
+    &.is-now { background: var(--primary-color); color: #fff; font-weight: 600; }
+    &.is-done { color: var(--text-color); }
+  }
+}
+
+.Millwright-progress { margin-top: 16px; }
+
+.Millwright-progressBar {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--control-bg);
+  overflow: hidden;
+}
+
+.Millwright-progressFill {
+  height: 100%;
+  background: var(--primary-color);
+  transition: width .3s ease;
+}
+
+.Millwright-progressText {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.Millwright-error { margin-top: 18px; }
+.Millwright-errorWhere { font-weight: 700; margin-bottom: 6px; }
+
+.Millwright-errorText {
+  // Composer's own words, at full width, scrolling sideways rather than
+  // wrapping mid-constraint — the exact string is what somebody searches for.
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 260px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--control-bg);
+  margin-bottom: 12px;
+}
+
+.Millwright-stall,
+.Millwright-next {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted-color);
+  max-width: 74ch;
+}
+
+.Millwright-log {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--control-bg);
+  font-size: 13px;
+  max-height: 320px;
+  overflow-y: auto;
+
+  li {
+    padding: 3px 0;
+    color: var(--muted-color);
+  }
+
+  // The most recent line is the one being looked for.
+  li:last-child { color: var(--text-color); font-weight: 600; }
+}
+
+.Millwright-dismiss { margin-top: 14px; padding-left: 0; }
+.Millwright-updateAll { margin-bottom: 16px; }
+.Millwright-tag--muted { background: var(--control-bg); color: var(--muted-color); }
+
+// ── Discovery ────────────────────────────────────────────────────────────────
+
+.Millwright-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+
+  .FormControl { flex: 1; min-width: 0; }
+}
+
+.Millwright-searchNote {
+  color: var(--muted-color);
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+
+.Millwright-desc {
+  color: var(--muted-color);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 10px;
+
+  // Two lines, so every card in a row is the same height and the grid does not
+  // develop a ragged bottom edge as descriptions vary.
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.9em;
+}
+
+.Millwright-empty {
+  color: var(--muted-color);
+  padding: 28px 0;
+}
+
+// Two facts can be true of one package at once — abandoned, and works here.
+.Millwright-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+// ── Flarum itself ────────────────────────────────────────────────────────────
+
+.Millwright-core {
+  border: 1px solid var(--control-bg);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 22px;
+  background: var(--body-bg);
+}
+
+.Millwright-coreHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.Millwright-coreTitle { font-weight: 700; }
+.Millwright-corenow,
+.Millwright-coreNote { color: var(--muted-color); font-size: 13px; }
+
+.Millwright-coreSummary {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted-color);
+  max-width: 78ch;
+
+  > div + div { margin-top: 5px; }
+}
+
+.Millwright-coreBlocked { color: var(--text-color); font-weight: 600; }
+
+.Millwright-coreRows {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--control-bg);
+  font-size: 13px;
+}
+
+.Millwright-coreRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  justify-content: space-between;
+  padding: 5px 0;
+
+  // A blocker is the only thing here in full-strength text. Everything else in
+  // this list is context for it.
+  &.is-blocked .Millwright-coreState { color: var(--text-color); font-weight: 600; }
+}
+
+.Millwright-corePkg { font-family: monospace; }
+.Millwright-coreState { color: var(--muted-color); }
+.Millwright-actions { display: flex; gap: 6px; align-items: center; }
+.Millwright-more { margin-top: 20px; text-align: center; }
+
+// ── Sources: repositories, stability, credentials ────────────────────────────
+
+.Millwright-sourcesNote { color: var(--muted-color); font-size: 13px; margin-bottom: 22px; }
+
+.Millwright-section {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--control-bg);
+
+  &:last-child { border-bottom: 0; }
+
+  h3 { margin: 0 0 6px; font-size: 15px; }
+}
+
+.Millwright-sectionNote {
+  color: var(--muted-color);
+  font-size: 13px;
+  max-width: 74ch;
+  margin: 0 0 14px;
+}
+
+.Millwright-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--control-bg);
+    font-size: 13px;
+
+    &:last-child { border-bottom: 0; }
+  }
+}
+
+// The URL is the identifying part of a row, so it takes the space and truncates
+// from the end rather than wrapping and pushing the remove button around.
+.Millwright-listUrl {
+  flex: 1;
+  min-width: 0;
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.Millwright-inlineForm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  .FormControl { width: auto; }
+  input.FormControl { flex: 1; min-width: 0; }
+
+  &--wrap { flex-wrap: wrap; }
+}
+
+.Millwright-check { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+
+.Millwright-consequence {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted-color);
+  max-width: 74ch;
+}
