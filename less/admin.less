@@ -1,0 +1,820 @@
+// Millwright — admin
+//
+// 🚨 One visual language across every screen, built from Flarum's own theme
+// variables via color-mix so it follows the admin into dark mode instead of
+// pinning light greys. Three shades do almost all the work:
+//
+//   12% of the text colour — a border
+//    8% — a hairline between rows
+//    3% — a tint that separates "what is" from "what you can do"
+//
+// Everything is a card with the same chrome: a head that says what this is and
+// what it means, a body of rows, and where there is something to do, a tinted
+// foot. Consistency here is not decoration — when every panel is shaped the
+// same way, a number in an unfamiliar place still reads.
+
+@mw-border: color-mix(in srgb, var(--text-color) 12%, transparent);
+@mw-hairline: color-mix(in srgb, var(--text-color) 8%, transparent);
+@mw-tint: color-mix(in srgb, var(--text-color) 3%, transparent);
+@mw-radius: 10px;
+@mw-pad: 18px;
+
+// ── tabs ─────────────────────────────────────────────────────────────────────
+//
+// A segmented control rather than loose buttons: these are four views of one
+// thing, and loose buttons read as four unrelated actions.
+
+.Millwright-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid @mw-border;
+  border-radius: 9px;
+  background: @mw-tint;
+  margin-bottom: 22px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.Millwright-tab {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  color: var(--muted-color);
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  &:hover { color: var(--text-color); }
+
+  &.is-active {
+    background: var(--body-bg);
+    color: var(--text-color);
+    font-weight: 600;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--text-color) 10%, transparent);
+  }
+}
+
+.Millwright-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  background: var(--primary-color);
+  color: #fff;
+}
+
+// ── the shared card ──────────────────────────────────────────────────────────
+
+.Millwright-card,
+.Millwright-core,
+.Millwright-run,
+.Millwright-banner {
+  border: 1px solid @mw-border;
+  border-radius: @mw-radius;
+  background: var(--body-bg);
+  overflow: hidden;
+}
+
+.Millwright-cardHead,
+.Millwright-coreHead,
+.Millwright-runHead {
+  padding: 16px @mw-pad 14px;
+
+  h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    margin: 0;
+    color: var(--muted-color);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 68ch;
+  }
+}
+
+// ── Flarum itself ────────────────────────────────────────────────────────────
+
+.Millwright-core { margin-bottom: 20px; }
+
+.Millwright-coreHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.Millwright-coreTitle { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.Millwright-corenow,
+.Millwright-coreNote { color: var(--muted-color); font-size: 13px; }
+.Millwright-coreNote { padding: 0 @mw-pad @mw-pad; }
+
+.Millwright-coreSummary {
+  padding: 0 @mw-pad 14px;
+  font-size: 13px;
+  color: var(--muted-color);
+  max-width: 78ch;
+
+  > div + div { margin-top: 6px; }
+}
+
+// 🚨 The blocking sentence is the one thing on this panel that changes what
+// somebody can do, so it is the one thing given full-strength text and a rule.
+.Millwright-coreBlocked {
+  color: var(--text-color);
+  font-weight: 600;
+  padding: 10px 13px;
+  border-inline-start: 3px solid var(--alert-error-color, #d83e3e);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--alert-error-color, #d83e3e) 8%, transparent);
+}
+
+.Millwright-coreClear {
+  color: var(--text-color);
+  padding: 10px 13px;
+  border-inline-start: 3px solid color-mix(in srgb, var(--primary-color) 55%, transparent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--primary-color) 7%, transparent);
+}
+
+.Millwright-coreRows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid @mw-hairline;
+  font-size: 13px;
+}
+
+.Millwright-coreRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  align-items: baseline;
+  padding: 9px @mw-pad;
+
+  & + & { border-top: 1px solid @mw-hairline; }
+
+  // A blocker is the only row here in full-strength text; the rest is context.
+  &.is-blocked .Millwright-coreState { color: var(--text-color); font-weight: 600; }
+  &.is-blocked { background: color-mix(in srgb, var(--alert-error-color, #d83e3e) 4%, transparent); }
+}
+
+.Millwright-corePkg {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.Millwright-coreState { color: var(--muted-color); text-align: end; }
+.Millwright-coreChecking { font-style: italic; }
+
+// ── the row above the extension grid ─────────────────────────────────────────
+
+.Millwright-updateAll { margin-bottom: 14px; }
+
+.Millwright-checkline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  margin-bottom: 18px;
+  border: 1px solid @mw-border;
+  border-radius: 8px;
+  background: @mw-tint;
+  color: var(--muted-color);
+  font-size: 13px;
+
+  b { color: var(--text-color); }
+}
+
+// ── extension cards ──────────────────────────────────────────────────────────
+//
+// 🚨 A fixed row for the name, a flexible middle, and a foot pinned to the
+// bottom. Without the grid the cards in a row end at different heights and the
+// buttons sit at different y — which is the single thing that makes a grid of
+// cards look unfinished.
+
+.Millwright-grid {
+  display: grid;
+  /* 🚨 The `min()` is ESCAPED. less.php has a min() of its own and refuses to
+     compare a pixel length with a percentage — unescaped, this file stops
+     compiling and takes the whole admin stylesheet bundle with it.
+     Without the min(), a container narrower than the track gets a column wider
+     than itself, and .Millwright-card's overflow:hidden then CLIPS the badge
+     and the Update button rather than wrapping them.
+
+     🚨 `minmax(0, ...)` on the capped grid below for the same reason: a track
+     sized to min-content is a track that can be wider than the container. */
+  grid-template-columns: repeat(auto-fill, minmax(~"min(300px, 100%)", 1fr));
+  gap: 14px;
+}
+
+/*
+ * Three across, never four.
+ *
+ * A card carries a name, a package, a version, up to two tags and two buttons.
+ * At four columns on a wide admin the package name is the width of the card and
+ * the "Update available" badge has nowhere to go; three gives every one of them
+ * room on one line. Below this the auto-fill above takes over and steps down to
+ * two and then one on its own.
+ */
+@media (min-width: 1000px) {
+  .Millwright-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.Millwright-grid .Millwright-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  transition: border-color .15s ease;
+
+  &:hover { border-color: color-mix(in srgb, var(--text-color) 22%, transparent); }
+
+  /*
+   * 🚨 This one line is why the badge and the Update button were cut off.
+   *
+   * A grid ITEM defaults to `min-width: auto`, which means it refuses to be
+   * narrower than its own content. So the card's rows sized themselves to the
+   * longest package name — measured at 438px inside a 330px card — and the
+   * card's `overflow: hidden` quietly sliced off everything past its edge:
+   * half the badge, and the Update button entirely.
+   *
+   * Nothing about it looks like an error. The row simply is that wide, and the
+   * flex-wrap inside it never triggers because from its own point of view it
+   * has all the room it asked for.
+   */
+  > * { min-width: 0; }
+}
+
+.Millwright-cardTop {
+  display: flex;
+  /* 🚨 Wraps. The badge is nowrap and unshrinkable by design — a half-rendered
+     "UPDATE AV" is worse than none — so when the name, the package and the
+     badge cannot share a line, the badge takes its own instead of being cut
+     off by the card's overflow:hidden. */
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 14px @mw-pad 0;
+}
+
+.Millwright-icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.Millwright-name {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.Millwright-pkg {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--muted-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.Millwright-desc {
+  color: var(--muted-color);
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px @mw-pad 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.Millwright-meta {
+  padding: 10px @mw-pad 0;
+  font-size: 12px;
+  color: var(--muted-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.Millwright-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding: 11px @mw-pad;
+  border-top: 1px solid @mw-hairline;
+  background: @mw-tint;
+}
+
+.Millwright-actions,
+.Millwright-tags { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+// ── chips ────────────────────────────────────────────────────────────────────
+
+.Millwright-tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--text-color) 8%, transparent);
+  color: var(--muted-color);
+
+  &--ok {
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+    color: color-mix(in srgb, var(--primary-color) 78%, var(--text-color));
+  }
+
+  &--warn {
+    background: color-mix(in srgb, #c77700 14%, transparent);
+    color: color-mix(in srgb, #8a5200 80%, var(--text-color));
+  }
+
+  &--muted { background: color-mix(in srgb, var(--text-color) 6%, transparent); }
+}
+
+// ── "update available" ───────────────────────────────────────────────────────
+//
+// 🚨 A word, not a colour. The badge names what it means, so it still reads on
+// a monochrome screen, to a colourblind admin, and in a screenshot pasted into
+// a support thread. The amber only reinforces it.
+
+.Millwright-cardId {
+  // 🚨 `flex: 1 1 0` with min-width:0, so a long package name can be narrower
+  // than its own content. The default `min-width: auto` on a flex item is what
+  // lets "huseyinfiliz/discussion-ban" in a monospace face push the row wider
+  // than the card and get clipped.
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.Millwright-name,
+.Millwright-pkg {
+  overflow-wrap: anywhere;
+}
+
+.Millwright-badge {
+  flex-shrink: 0;
+  /* Holds the right edge on one line, and the left edge once it wraps. */
+  margin-inline-start: auto;
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border-radius: 20px;
+  background: color-mix(in srgb, #c77700 16%, transparent);
+  color: color-mix(in srgb, #8a5200 80%, var(--text-color));
+  border: 1px solid color-mix(in srgb, #c77700 34%, transparent);
+}
+
+// The card itself carries the state too, so a card needing attention is
+// findable by shape at a glance down a long grid — not only by reading badges.
+.Millwright-card--update {
+  border-color: color-mix(in srgb, #c77700 45%, transparent);
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, #c77700 70%, transparent);
+}
+
+// ── the banner's list of what is actually out of date ────────────────────────
+
+.Millwright-banner-list {
+  list-style: none;
+  margin: 6px 0 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.Millwright-banner-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--text-color) 7%, transparent);
+  font-size: 12px;
+}
+
+.Millwright-banner-name { font-weight: 700; }
+
+.Millwright-banner-vers {
+  color: var(--muted-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.Millwright-banner-more {
+  color: var(--muted-color);
+  background: none !important;
+  padding-inline: 2px !important;
+}
+
+// ── search ───────────────────────────────────────────────────────────────────
+
+.Millwright-search {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+
+  .FormControl { flex: 1; min-width: 0; }
+}
+
+.Millwright-searchNote { color: var(--muted-color); font-size: 13px; margin-bottom: 18px; }
+.Millwright-more { margin-top: 20px; text-align: center; }
+
+.Millwright-empty,
+.Millwright-cardEmpty {
+  padding: 16px;
+  border: 1px dashed color-mix(in srgb, var(--text-color) 18%, transparent);
+  border-radius: 8px;
+  color: var(--muted-color);
+  font-size: 13px;
+}
+
+.Millwright-empty { margin: 8px 0; }
+
+.Millwright-notice {
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  border-inline-start: 3px solid var(--alert-error-color, #d83e3e);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--alert-error-color, #d83e3e) 8%, transparent);
+  font-size: 13px;
+  max-width: 78ch;
+}
+
+// ── a run in progress ────────────────────────────────────────────────────────
+//
+// 🚨 Deliberately calm. This is read while somebody is anxious about their
+// site, so nothing animates, pulses or competes with the two things that
+// matter: which step it is on, and what the log says.
+
+.Millwright-run { margin-bottom: 24px; }
+.Millwright-run--failed { border-color: color-mix(in srgb, var(--alert-error-color, #d83e3e) 45%, transparent); }
+
+.Millwright-runHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.Millwright-driver { color: var(--muted-color); font-size: 12px; max-width: 52ch; }
+
+.Millwright-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0 @mw-pad;
+  font-size: 12px;
+}
+
+.Millwright-phase {
+  color: var(--muted-color);
+  padding: 4px 11px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--text-color) 6%, transparent);
+
+  &.is-now { background: var(--primary-color); color: #fff; font-weight: 600; }
+  &.is-done { color: var(--text-color); }
+}
+
+.Millwright-progress { padding: 16px @mw-pad 0; }
+
+.Millwright-progressBar {
+  height: 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-color) 8%, transparent);
+  overflow: hidden;
+}
+
+.Millwright-progressFill {
+  height: 100%;
+  background: var(--primary-color);
+  transition: width .3s ease;
+}
+
+.Millwright-progressText {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.Millwright-error { padding: 16px @mw-pad 0; }
+.Millwright-errorWhere { font-weight: 700; margin-bottom: 8px; font-size: 13px; }
+
+.Millwright-errorText {
+  // Composer's own words, scrolling sideways rather than wrapping mid-constraint
+  // — the exact string is what somebody searches for.
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 260px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-color) 6%, transparent);
+  margin-bottom: 12px;
+}
+
+.Millwright-stall,
+.Millwright-next {
+  margin: 14px @mw-pad 0;
+  font-size: 13px;
+  color: var(--muted-color);
+  max-width: 74ch;
+}
+
+.Millwright-log {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 14px @mw-pad;
+  border-top: 1px solid @mw-hairline;
+  background: @mw-tint;
+  font-size: 13px;
+  max-height: 320px;
+  overflow-y: auto;
+
+  li { padding: 3px 0; color: var(--muted-color); }
+
+  // The most recent line is the one being looked for.
+  li:last-child { color: var(--text-color); font-weight: 600; }
+}
+
+.Millwright-dismiss { margin: 14px @mw-pad; padding-left: 0; }
+
+// ── this host ────────────────────────────────────────────────────────────────
+
+.Millwright-summary {
+  border: 1px solid @mw-border;
+  border-radius: @mw-radius;
+  background: var(--body-bg);
+  padding: 16px @mw-pad;
+  margin-bottom: 14px;
+
+  h3 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+  p { margin: 0; color: var(--muted-color); font-size: 13px; max-width: 74ch; }
+}
+
+.Millwright-checks {
+  border: 1px solid @mw-border;
+  border-radius: @mw-radius;
+  background: var(--body-bg);
+  overflow: hidden;
+}
+
+.Millwright-check {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 13px @mw-pad;
+
+  & + & { border-top: 1px solid @mw-hairline; }
+}
+
+.Millwright-check-what { font-weight: 600; font-size: 13.5px; margin-bottom: 2px; }
+.Millwright-check-why { color: var(--muted-color); font-size: 13px; line-height: 1.5; max-width: 74ch; }
+
+// ── the dashboard banner ─────────────────────────────────────────────────────
+
+.Millwright-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  align-items: center;
+  justify-content: space-between;
+  border-inline-start: 3px solid var(--primary-color);
+  border-radius: 0 @mw-radius @mw-radius 0;
+  padding: 14px @mw-pad;
+  margin-bottom: 20px;
+}
+
+.Millwright-banner-title { font-weight: 700; margin-bottom: 2px; }
+.Millwright-banner-body { color: var(--muted-color); font-size: 13px; max-width: 74ch; }
+.Millwright-banner-actions { display: flex; gap: 8px; align-items: center; }
+
+// ── Sources: repositories, stability, credentials ────────────────────────────
+//
+// 🚨 Cards, not a stack of form rows. The three things on this screen — where
+// Composer looks, what it accepts, how it authenticates — are separate
+// decisions with separate consequences, and a flat list of inputs separated by
+// hairlines makes them read as one long form nobody finishes reading.
+//
+// Every colour is derived from Flarum's own variables with color-mix, so the
+// screen follows the admin theme into dark mode instead of pinning light greys.
+
+.Millwright-sourcesNote {
+  color: var(--muted-color);
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.Millwright-card {
+  border: 1px solid color-mix(in srgb, var(--text-color) 12%, transparent);
+  border-radius: 10px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  background: var(--body-bg);
+}
+
+.Millwright-cardHead {
+  padding: 16px 18px 14px;
+
+  h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    margin: 0;
+    color: var(--muted-color);
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 68ch;
+  }
+}
+
+// ── the rows ────────────────────────────────────────────────────────────────
+//
+// 🚨 A grid, so the columns line up down the list. As flex, a `composer` badge
+// is wider than a `vcs` one and every URL starts at a different x — which reads
+// as carelessness before it reads as anything else.
+
+.Millwright-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid color-mix(in srgb, var(--text-color) 8%, transparent);
+}
+
+.Millwright-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px;
+
+  & + & {
+    border-top: 1px solid color-mix(in srgb, var(--text-color) 7%, transparent);
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--text-color) 3%, transparent);
+  }
+}
+
+.Millwright-kind {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-color) 8%, transparent);
+  color: var(--muted-color);
+}
+
+.Millwright-rowMain {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// "token set" — a state, not an action. Green enough to scan, quiet enough not
+// to compete with the button beside it.
+.Millwright-held {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  color: color-mix(in srgb, var(--primary-color) 78%, var(--text-color));
+}
+
+// 🚨 Reads as quiet until you approach it, then as destructive. A Remove that
+// looks dangerous at rest makes a settings screen feel hazardous to use; one
+// that never looks dangerous gets clicked by accident.
+.Millwright-rowAction {
+  font: inherit;
+  font-size: 12px;
+  border: 0;
+  background: none;
+  color: var(--muted-color);
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--alert-error-color, #d83e3e) 12%, transparent);
+    color: var(--alert-error-color, #d83e3e);
+  }
+
+  &:disabled { opacity: .5; cursor: default; }
+}
+
+// ── the footer where things are added ───────────────────────────────────────
+//
+// 🚨 Tinted and separated on purpose. "What is configured" and "add another"
+// are different acts, and when they share a background the form reads as
+// another row in the list.
+
+.Millwright-cardFoot,
+.Millwright-cardControls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--text-color) 8%, transparent);
+  background: color-mix(in srgb, var(--text-color) 3%, transparent);
+
+  .FormControl { width: auto; height: 36px; }
+  input.FormControl { flex: 1; min-width: 0; }
+
+  &--wrap { flex-wrap: wrap; }
+}
+
+.Millwright-cardControls { background: none; }
+
+.Millwright-kindSelect { min-width: 132px; }
+
+.Millwright-cardEmpty {
+  margin: 0 18px 16px;
+  padding: 14px 16px;
+  border: 1px dashed color-mix(in srgb, var(--text-color) 18%, transparent);
+  border-radius: 8px;
+  color: var(--muted-color);
+  font-size: 13px;
+}
+
+// ── the callout ─────────────────────────────────────────────────────────────
+//
+// 🚨 Visually distinct from the description above it, because it says something
+// different: the description explains the setting, the callout states the
+// consequence of the value currently chosen. In the same grey at the same size
+// they read as one paragraph and the consequence is skipped.
+
+.Millwright-callout {
+  margin: 0 18px 16px;
+  padding: 11px 14px;
+  border-inline-start: 3px solid color-mix(in srgb, var(--primary-color) 55%, transparent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--primary-color) 7%, transparent);
+  color: var(--text-color);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 76ch;
+}
+
+.Millwright-callout--lock {
+  border-inline-start-color: color-mix(in srgb, var(--text-color) 35%, transparent);
+  background: color-mix(in srgb, var(--text-color) 5%, transparent);
+  color: var(--muted-color);
+}
+
+.Millwright-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--muted-color);
+}
