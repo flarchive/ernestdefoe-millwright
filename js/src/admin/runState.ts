@@ -1,0 +1,153 @@
+/**
+ * The decisions the run screen makes, as functions with no DOM and no network.
+ *
+ * 🚨 Every one of these was a bug in production, and none of them was testable
+ * where it lived.
+ *
+ * They were expressions buried inside a Mithril component — `!!this.run &&
+ * !this.dismissed` deciding whether to replace the entire page, a `catch` block
+ * deciding whether a failed poll meant "stalled" or "keep watching", a ternary
+ * deciding whether a card shows the button that starts an update. A decision
+ * that can only be reached by rendering a component and driving a browser is a
+ * decision nobody tests, and all four shipped broken.
+ *
+ * Pulled out here they are ordinary functions. The components stay thin enough
+ * that what is left in them is markup.
+ */
+
+export type RunState = 'pending' | 'running' | 'done' | 'failed' | 'rolled-back';
+
+export interface RunLike {
+  id?: string;
+  state?: RunState | string;
+  phase?: string;
+  items?: unknown[];
+  index?: number;
+}
+
+/** States in which work is still being done. */
+const LIVE: string[] = ['pending', 'running'];
+
+/** States in which the run is over, however it ended. */
+const OVER: string[] = ['done', 'failed', 'rolled-back'];
+
+export function runIsLive(run: RunLike | null | undefined): boolean {
+  return !!run && LIVE.includes(String(run.state));
+}
+
+export function runIsOver(run: RunLike | null | undefined): boolean {
+  return !!run && OVER.includes(String(run.state));
+}
+
+/**
+ * Whether the run panel is on screen at all.
+ *
+ * A finished run keeps its panel until dismissed — the log is most useful the
+ * moment the run ends.
+ */
+export function showingRun(run: RunLike | null | undefined, dismissed: boolean): boolean {
+  return !!run && !dismissed;
+}
+
+/**
+ * Whether the panel takes the WHOLE page, hiding the tabs and the extension
+ * grid.
+ *
+ * 🚨 Only while a run is live. Hiding the grid during an update is deliberate —
+ * a row of Update buttons beside a running update invites a second one, and the
+ * honest answer to the second press is a refusal.
+ *
+ * Hiding it because a run finished is not the same thing, and that is the bug
+ * this function exists to have a name for: `showingRun()` was used for both, so
+ * one completed update left the page showing nothing but a log, on every load,
+ * with no way to reach the Update buttons at all.
+ */
+export function hidesPage(run: RunLike | null | undefined, dismissed: boolean): boolean {
+  return showingRun(run, dismissed) && runIsLive(run);
+}
+
+/**
+ * Whether a remembered dismissal applies to the run now on screen.
+ *
+ * 🚨 Keyed to the run's id, so a NEW run is never silently pre-dismissed, and
+ * never restored for a live one — dismissing must not become a way to hide an
+ * update that is halfway through applying itself.
+ */
+export function dismissalApplies(run: RunLike | null | undefined, storedId: string | null): boolean {
+  if (!run || !run.id || !storedId) return false;
+  if (runIsLive(run)) return false;
+
+  return run.id === storedId;
+}
+
+export type PollAction = 'drive' | 'watch' | 'stop';
+
+export interface PollOutcome {
+  action: PollAction;
+  /** Milliseconds until the next attempt. */
+  delayMs: number;
+  /** Which explanation to show, if any. */
+  message: 'none' | 'unauthorised' | 'failing';
+}
+
+const BASE_DELAY = 1500;
+const MAX_DELAY = 15000;
+
+/**
+ * What to do after an attempt to drive the run.
+ *
+ * 🚨 A failed poll is never a failed update. The run's state is on disk and
+ * another driver may well be advancing it; this call simply did not land.
+ *
+ * 🚨 And a failure to DRIVE is not a reason to stop WATCHING. `/millwright/step`
+ * is a POST that takes the lock; `/millwright/state` is a GET that changes
+ * nothing. When the first fails the second still works, and the panel's whole
+ * job is to show progress. Falling back is what stops a completed update
+ * looking frozen at step one.
+ */
+export function pollOutcome(status: number | null, misses: number): PollOutcome {
+  if (misses === 0) {
+    return { action: 'drive', delayMs: BASE_DELAY, message: 'none' };
+  }
+
+  return {
+    action: 'watch',
+    delayMs: Math.min(BASE_DELAY * misses, MAX_DELAY),
+    /*
+     * A 4xx here is an expired session far more often than anything else: the
+     * update is fine and a reload fixes the screen. Saying "nothing has moved"
+     * instead sends somebody to look at the update, which is the one place the
+     * problem is not.
+     */
+    message: status !== null && status >= 400 && status < 500 ? 'unauthorised' : 'failing',
+  };
+}
+
+export interface CardLike {
+  update?: { from: string; to: string } | null;
+  enabled?: boolean;
+  pathInstall?: boolean;
+}
+
+/**
+ * What a card in the extension grid offers.
+ *
+ * 🚨 `pathInstall` beats everything. Composer installs a path repository as a
+ * symlink into a checkout on this machine — how every extension developer runs
+ * their own work — and Millwright will not replace one. Offering the button and
+ * refusing afterwards is a worse way to learn that than not being offered it.
+ */
+export function cardOffers(card: CardLike) {
+  const hasUpdate = !!card.update;
+
+  return {
+    badge: hasUpdate,
+    update: hasUpdate && !card.pathInstall,
+    remove: !card.enabled && !card.pathInstall,
+  };
+}
+
+/** Anything with a newer version first — that is what somebody came to see. */
+export function sortForGrid<T extends CardLike>(cards: T[]): T[] {
+  return [...cards].sort((a, b) => Number(!!b.update) - Number(!!a.update));
+}
