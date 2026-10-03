@@ -1,0 +1,6 @@
+*.sh text eol=lf
+/js/node_modules export-ignore
+/js/test export-ignore
+/tests export-ignore
+/phpunit.xml export-ignore
+/.github export-ignore
