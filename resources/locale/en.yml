@@ -1,0 +1,259 @@
+ernestdefoe-millwright:
+  admin:
+    tab_installed: "Installed ({count})"
+    tab_host: This host
+    enabled: enabled
+    disabled: disabled
+    version_unknown: version unknown
+
+    # 🚨 "A newer version exists" — never "an update is available". The cheap
+    # check knows the first and cannot know the second, and a badge that
+    # overstates itself is one people stop reading.
+    none_newer: Everything checkable is up to date.
+    some_newer: "{count} package(s) have a newer version."
+    checked_ago: "Checked {when}."
+    never_checked: Not checked yet.
+    uncheckable: "{count} could not be checked — no repository this forum knows about lists them."
+    tracking: "{count} track a branch, so there is no version to compare."
+    check_now: Check now
+    checking: Checking…
+
+    banner_title: "{count} package(s) have a newer version"
+    banner_body: >-
+      That does not always mean you can install it — what else has to change, and
+      whether anything blocks it, is worked out when you ask.
+    banner_checked: "Last checked {when}."
+    banner_uncheckable: "{count} package(s) could not be checked at all."
+    banner_more: "and {count} more"
+    banner_open: Take a look
+    banner_dismiss: Not now
+    ago_minutes: "{count} minutes ago"
+    ago_hours: "{count} hours ago"
+    ago_days: "{count} days ago"
+
+    # 🚨 "Update", never "Upgrade". An upgrade sounds like a decision; an update
+    # sounds like maintenance, and this is maintenance.
+    update: Update
+    update_available: Update available
+    repin_confirm: >-
+      This forum requires an exact version of {count} extension(s), so a newer
+      one cannot be installed until that requirement is changed. Continue, and
+      composer.json will be updated to require the new version before anything
+      is downloaded. A rollback puts the requirement back too.
+    update_all: "Update all {count}"
+    starting: Starting…
+    start_failed: >-
+      The update could not be started, and the forum did not say why. Nothing has
+      changed.
+
+    path_install: local checkout
+    path_install_why: >-
+      This extension is a symlink into a directory on this server, so it is
+      probably one you are working on. Millwright will not replace it — update it
+      with git instead.
+
+    run_working: Updating
+    run_done: Update finished
+    run_failed: The update stopped
+    run_rolled_back: Put back the way it was
+
+    phase_plan: Working out what changes
+    phase_fetch: Downloading
+    phase_apply: Swapping files in
+    phase_finalise: Finishing up
+
+    working_out: Asking Composer what this involves. This is the slow part.
+    working_on: "{item} — {index} of {total}"
+
+    failed_at: "It stopped during: {step}"
+    roll_back: Put everything back
+    rolling_back: Putting everything back…
+    roll_back_confirm: >-
+      Put the extensions this update changed back to the versions they were
+      before it, along with composer.json and composer.lock? Database migrations
+      the update ran are not undone.
+    rollback_failed: >-
+      The rollback itself failed. Nothing was deleted at any point, so the old
+      files are still under storage/millwright/trash.
+    dismiss: Dismiss
+
+    # 🚨 Each of these says what IS happening, not just that something is wrong.
+    # A message that only signals trouble is how somebody ends up refreshing a
+    # page for ten minutes.
+    another_driver: >-
+      A background worker is doing the next step, so this page is just watching.
+    nothing_moved: >-
+      Nothing has moved for a couple of minutes. That is normal while Composer is
+      working something out; if it stays like this, the log below is the place to
+      look.
+    poll_unauthorised: >-
+      This screen cannot reach the server to drive the update — usually a
+      session that has expired while the page sat open. The update itself is
+      unaffected and is being carried on in the background. Reload the page.
+    watching_only: Showing progress read-only.
+    poll_failing: >-
+      This page has failed to reach the forum {count} times in a row. The update
+      itself is unaffected — it keeps its place on disk — and this will keep
+      trying.
+
+    tab_discover: Find extensions
+
+    search: Search
+    searching: Searching…
+    discover_placeholder: Search Packagist for a Flarum extension
+    discover_hint: >-
+      Every Flarum extension published on Packagist, most widely used first.
+    # 🚨 Against the version this forum RUNS, not against "Flarum 2". A forum on
+    # 2.0.0 and one on 2.1.0 get different answers, and saying which version was
+    # used is what makes the badge checkable.
+    discover_against: "Checked against the Flarum {version} this forum runs."
+    discover_none: "Nothing on Packagist matches “{query}”."
+    discover_failed: >-
+      The search could not be run. Packagist may be unreachable from this server.
+
+    downloads: "{count} downloads"
+    install: Install
+    already_installed: installed
+    abandoned: abandoned by its author
+
+    # 🚨 "Says it works", never "works". A declared constraint is the author's
+    # claim; whether the rest of this site allows it is a question only the plan
+    # can answer, and it is answered when Install is pressed.
+    compat_no: not for this Flarum
+    compat_no_why: "Its newest release asks for flarum/core {requires}."
+    compat_unknown: could not check
+    compat_prerelease: "{version} — a pre-release"
+    abandoned_why: >-
+      Its author has marked it as no longer maintained. It may still work.
+    abandoned_for: "Its author says to use {replacement} instead."
+
+    core_title: Flarum itself
+    core_loading: Checking Flarum…
+    core_running: "This forum runs Flarum {version}."
+    core_current: No newer Flarum has been published since the last check.
+    core_update_to: "Update Flarum to {version}"
+    core_failed: >-
+      Millwright could not work out what upgrading Flarum would involve. Nothing
+      has changed.
+
+    # 🚨 Stated as a consequence, never as a bare count. "3 extensions" is a
+    # number; "the upgrade would be refused" is the thing somebody needs to know,
+    # and it is why the button is disabled.
+    core_blocked: >-
+      {count} extension(s) have no release that works with Flarum {version}, so
+      the upgrade would be refused. They are listed below.
+    core_clear: "Every installed extension has a release that works with Flarum {version}."
+    core_updating_too: >-
+      {count} extension(s) will be updated at the same time, because their current
+      version does not support the new Flarum.
+    core_checking: "Checking {count} more extension(s)…"
+
+    core_row_blocked: "no release for this Flarum — asks for {requires}"
+    core_row_updating: "will update to {version}"
+    core_row_unknown: could not be checked
+
+    remove: Remove
+    # 🚨 Says how this differs from the Purge button sitting next to it. Flarum's
+    # Purge removes the extension's DATA and says plainly that it does not
+    # uninstall the extension; this removes the CODE. Together they are a full
+    # uninstall, and neither one alone should imply it is.
+    remove_confirm: >-
+      Remove {name}'s files from this server? This is the part Composer would do.
+      The old files are kept, so it can be undone. Its database tables and
+      settings are left alone — Flarum's own Purge button is what removes those,
+      and doing that first is worth considering if you are not coming back.
+
+    # 🚨 A spinner with no end is the failure this extension replaces. If the
+    # page cannot load, it says so and offers the one useful action.
+    load_failed: >-
+      Millwright could not load. Its API did not answer — check the browser
+      console and your forum's error log for what went wrong.
+    load_timeout: >-
+      Millwright's own page did not finish loading. Nothing is wrong with your
+      site or your extensions; something is stopping this page talking to the
+      forum. The browser console will say what.
+    try_again: Try again
+    discover_empty: >-
+      Packagist returned nothing. That is unusual — it may be having a moment.
+    show_more: Show more
+    loading_more: Loading…
+    # 🚨 "Remove files", not "Uninstall". Flarum already has an Uninstall button
+    # on this page that purges the extension's DATA; this one takes the code off
+    # the server. Two buttons a few pixels apart must not claim the same thing.
+    remove_files: Remove files
+
+    tab_sources: Sources
+    add: Add
+    save: Save
+    config_failed: >-
+      Millwright could not read composer.json. Nothing has been changed.
+
+    repos_title: Where Composer looks
+    repos_help: >-
+      Extensions that are not on Packagist — your own private repositories, or a
+      paid marketplace — have to be listed here before Composer can find them.
+    repos_none: Only Packagist. Nothing private or paid can be installed.
+    repos_placeholder: "https://github.com/you/your-extension"
+    repos_confirm: >-
+      Stop looking in {url}? Anything installed from it stays where it is, but it
+      cannot be updated or reinstalled until the repository is added again.
+
+    stability_title: How finished a release has to be
+    stability_help: >-
+      Composer refuses anything less finished than this. The error it gives when
+      the setting is too strict says the package "could not be found in any
+      version", which sounds like the package is missing rather than like a
+      setting is wrong.
+    prefer_stable: Still prefer a stable release when one exists
+
+    auth_title: Credentials
+    auth_help: >-
+      For private repositories and paid marketplaces. Stored in auth.json, which
+      Composer reads and which sits outside the web root.
+    auth_none: None stored. Private and paid repositories will fail to download.
+    auth_host_placeholder: "github.com"
+    auth_user_placeholder: username
+    auth_secret_placeholder: token or password
+    auth_confirm: >-
+      Remove the credential for {host}? Anything that needs it will stop
+      downloading until it is set again.
+    # 🚨 Said on screen, not just in the code. Somebody who expects to be able to
+    # read a token back needs to know why they cannot, or they will assume it did
+    # not save and enter it repeatedly.
+    auth_writeonly: >-
+      Millwright never shows a stored credential — not even to you. It shows
+      which hosts have one. To change a credential, enter the new value; it
+      replaces the old one.
+
+
+    # ── rollback copies ──────────────────────────────────────────────────────
+    trash_title: Rollback copies
+    trash_help: >-
+      Every update keeps the versions it replaced, so it can be rolled back.
+      Copies no rollback can use any more are tidied after each update and
+      every night. The copies the latest update needs are never removed.
+    trash_size: Taking up
+    trash_size_value: "{size} in {count, plural, one {# copy} other {# copies}}"
+    trash_freeable: Can be tidied now
+    trash_freeable_value: "{size} — {count, plural, one {# item} other {# items}}"
+    trash_freeable_none: Nothing — everything kept is still needed
+    trash_last: Last tidied
+    trash_last_value: "{when} — {count, plural, =0 {nothing to remove} other {removed #, freed {size}}}"
+    trash_last_never: Not yet
+    trash_keep_days: Keep rollback copies for
+    trash_days: days
+    trash_keep_runs: or for the last
+    trash_runs: updates
+    trash_prune: Tidy now
+    trash_pruning: Tidying…
+    trash_saved: Saved.
+    trash_rule: >-
+      Copies from the last {days} days or the last {runs} updates are kept,
+      whichever keeps more. Copies for the latest update, for one still in
+      progress and for anything that changed in the last day are always kept.
+    trash_confirm: >-
+      Remove {count, plural, one {# item} other {# items}} and free {size}?
+      They belong to updates that can no longer be rolled back from this
+      screen. The latest update can still be rolled back.
+    trash_done: "{count, plural, =0 {Nothing needed removing.} one {Removed # item, freeing {size}.} other {Removed # items, freeing {size}.}}"
+    trash_failed: Millwright could not read its rollback copies.

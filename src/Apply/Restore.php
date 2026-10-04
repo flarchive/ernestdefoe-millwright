@@ -1,0 +1,132 @@
+<?php
+
+namespace ErnestDefoe\Millwright\Apply;
+
+use ErnestDefoe\Millwright\Host\PhpBinary;
+use ErnestDefoe\Millwright\Work\ComposerRunner;
+use ErnestDefoe\Millwright\Work\InstalledRecord;
+use ErnestDefoe\Millwright\Work\Process;
+use Throwable;
+
+/**
+ * Put everything back the way it was, once, in one place.
+ *
+ * 🚨 Extracted because there are now TWO callers — the admin pressing the
+ * button, and the run undoing itself when the site stops answering — and two
+ * copies of "put it back" is the last thing this extension should have. The
+ * subtle half is not moving the files: it is reconciling Composer's record
+ * afterwards, and a second copy that forgot to would leave a site that looks
+ * fine and carries a phantom package which is fatal to enable, months later,
+ * with nothing pointing back here.
+ */
+class Restore
+{
+    public function __construct(
+        private string $vendorPath,
+        private string $basePath,
+        private string $workDirRoot,
+        private string $trashPath,
+        private Journal $journal,
+        private ComposerRunner $composer,
+    ) {
+    }
+
+    /** Is there anything saved to put back? */
+    public function possible(): bool
+    {
+        return $this->journal->exists() || is_file($this->workDirRoot . '/composer.lock.before');
+    }
+
+    /**
+     * @return array{undone: list<string>, note: ?string}
+     */
+    public function run(): array
+    {
+        $undone = (new Rollback(
+            $this->vendorPath,
+            $this->trashPath,
+            $this->journal,
+            $this->basePath,
+            $this->workDirRoot
+        ))->run();
+
+        $note = null;
+
+        if ($undone !== []) {
+            /*
+             * 🚨 `install`, not `dump-autoload`. Moving the files back leaves
+             * vendor/composer/installed.json still claiming a package whose
+             * directory is gone, and dump-autoload regenerates the autoloader
+             * FROM that record — it faithfully rebuilds the wrong thing.
+             *
+             * A subprocess, so no Flarum boots inside the process that has just
+             * moved its files out from under it.
+             */
+            try {
+                // 🚨 Record first, or `install` re-extracts the packages just
+                // put back — with a Composer that lives in this same vendor/,
+                // which is how an update took wowcraft.online down. Synced
+                // from the restored lock, install only rebuilds the autoloader.
+                (new InstalledRecord($this->basePath))->syncFromLock();
+
+                $result = $this->composer->run(['install', '--no-scripts']);
+
+                if ($result['code'] === 0) {
+                    $undone[] = "Composer's record put back";
+                } else {
+                    $note = 'The files are back, but Composer could not update its own record. '
+                        . 'Run `composer install` to finish putting things back.';
+                }
+            } catch (Throwable $e) {
+                $note = 'The files are back, but Composer could not be run here (' . $e->getMessage() . '). '
+                    . 'Run `composer install` to finish putting things back.';
+            }
+        }
+
+        if ($undone !== [] && $note === null) {
+            $note = $this->refresh($undone);
+        }
+
+        return ['undone' => $undone, 'note' => $note];
+    }
+
+    /**
+     * Make the forum SERVE what was just put back.
+     *
+     * 🚨 Putting the files back is not the same as undoing the update. The
+     * update's last phase published the new version's assets and rebuilt the
+     * caches from it, and none of that lives in vendor/. Proved on the demo
+     * forum: after rolling fof/polls back from rc.4 to rc.3, vendor and the
+     * lock said rc.3 and public/assets/forum.js was still rc.4's code — the
+     * browser running one version's JavaScript against the other's PHP, which
+     * is the exact mismatch an update finishes by preventing.
+     *
+     * Same commands, same order, same subprocess as the update's finish.
+     *
+     * @param list<string> $undone appended to as each one succeeds
+     */
+    private function refresh(array &$undone): ?string
+    {
+        if (! is_file($this->basePath . '/flarum')) {
+            return null;   // not a forum (the tests' trees)
+        }
+
+        $php = (new PhpBinary())->path();
+
+        foreach (['assets:publish', 'cache:clear', 'millwright:repair-formatter'] as $command) {
+            $result = $php === null
+                ? ['code' => 1, 'output' => 'no command-line PHP was found on this host']
+                : Process::run([$php, $this->basePath . '/flarum', $command], $this->basePath);
+
+            if ($result['code'] !== 0) {
+                return "The files are back, but `php flarum $command` failed, so the forum may still be serving "
+                    . 'the newer version\'s assets. Run `php flarum assets:publish`, `php flarum cache:clear` and '
+                    . '`php flarum millwright:repair-formatter` to finish.';
+            }
+        }
+
+        $undone[] = 'assets and caches rebuilt';
+
+        return null;
+    }
+}
