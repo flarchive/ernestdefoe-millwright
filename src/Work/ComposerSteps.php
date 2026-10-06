@@ -1,0 +1,1124 @@
+<?php
+
+namespace ErnestDefoe\Millwright\Work;
+
+use ErnestDefoe\Millwright\Prune\Pruner;
+use ErnestDefoe\Millwright\Prune\Retention;
+use ErnestDefoe\Millwright\Apply\Applier;
+use ErnestDefoe\Millwright\Apply\Journal;
+use ErnestDefoe\Millwright\Apply\Restore;
+use ErnestDefoe\Millwright\Plan\Change;
+use ErnestDefoe\Millwright\Plan\LockDiff;
+use ErnestDefoe\Millwright\Run\Run;
+use ErnestDefoe\Millwright\Host\Opcache;
+use ErnestDefoe\Millwright\Host\SiteHealth;
+use ErnestDefoe\Millwright\Host\Verdict;
+use ErnestDefoe\Millwright\Host\ErrorLog;
+use ErnestDefoe\Millwright\Run\NotYet;
+use ErnestDefoe\Millwright\Run\Reverted;
+use ErnestDefoe\Millwright\Run\Steps;
+use RuntimeException;
+
+/**
+ * A real update, broken into pieces small enough that no single one needs a long
+ * request.
+ *
+ * This is where the four phases stop being an idea and become Composer, HTTP and
+ * renames. Nothing here is clever: the difficulty was all in making each unit
+ * small, repeatable and honest, and that work is in LockDiff, Fetcher and
+ * Applier. This class only says what the units are and in what order.
+ *
+ * 🚨 Every doItem() has to be safe to run twice. The driver saves progress AFTER
+ * the work, so a process killed in between asks for the same item again on
+ * resume. Fetch checks whether the package is already staged; apply's stash is a
+ * no-op when the source is already gone; the finalise commands are all
+ * idempotent by nature. That is a property to preserve, not an accident.
+ */
+class ComposerSteps implements Steps
+{
+    public function __construct(
+        private string $installPath,
+        private string $workDir,
+        private ComposerRunner $composer,
+        private Fetcher $fetcher,
+        private Applier $applier,
+        private Journal $journal,
+        /** @var list<string> the packages the user asked to change */
+        private array $requested = [],
+        /** 'update', 'install' for something new, or 'remove' to take one out */
+        private string $mode = 'update',
+        /*
+         * 🚨 Optional, and every one of them degrades to "cannot check" rather
+         * than to "fine". A host that cannot be asked whether its site is up
+         * must not have that read as a yes — see verify().
+         */
+        private string $vendorPath = '',
+        private string $storagePath = '',
+        private string $siteUrl = '',
+        /**
+         * 🚨 Requirements this run is authorised to RAISE, package => version.
+         *
+         * A forum that pins `page-builder` to `3.5.1` cannot be moved to 3.6.0
+         * by a resolve, however many times somebody presses Update — the
+         * constraint forbids it. Raising the pin is the only thing that helps,
+         * and it edits composer.json, so it is never inferred: the admin is
+         * shown the exact requirement change and it is recorded with the run.
+         *
+         * @var array<string,string>
+         */
+        private array $repin = [],
+    ) {
+    }
+
+    public function itemsFor(string $phase, Run $run): array
+    {
+        return match ($phase) {
+            'plan'     => ['check the site', 'work out what changes', 'check file permissions'],
+            'fetch'    => array_map(fn (Change $c) => $c->package, $this->downloadable()),
+            'apply'    => array_map(fn (Change $c) => $c->package, $this->plan()),
+            /*
+             * 🚨 'tidy the trash' is LAST, after the site has been checked: an
+             * update that is about to be undone automatically must not have its
+             * housekeeping run first. Its copies would be kept anyway — this
+             * run is the newest — but there is no reason to find out.
+             */
+            'finalise' => ['register', 'migrations', 'assets', 'caches', 'code cache', 'check the site again', 'tidy the trash'],
+            default    => [],
+        };
+    }
+
+    public function doItem(string $phase, string $item, Run $run): ?string
+    {
+        return match ($phase) {
+            'plan'     => match ($item) {
+                'check the site'         => $this->baseline(),
+                'check file permissions' => $this->checkPermissions(),
+                default                  => $this->resolve(),
+            },
+            'fetch'    => $this->fetchOne($item),
+            'apply'    => $this->applyOne($item),
+            'finalise' => $this->finalise($item, $run),
+            default    => null,
+        };
+    }
+
+    /**
+     * Ask Composer what would change, and write it down.
+     *
+     * 🚨 `--no-install`: this updates composer.lock and NOTHING else. Composer's
+     * own install would rebuild a tree; all that is wanted here is the answer to
+     * "what moves", which is 16 seconds and 165 MB rather than minutes and a
+     * mutated vendor directory. The install is ours to do, one package at a
+     * time, after the user has seen the list.
+     */
+    private function resolve(): string
+    {
+        $lockPath = $this->installPath . '/composer.lock';
+
+        /*
+         * 🚨 Saved BEFORE Composer is allowed to rewrite them, and used by the
+         * rollback. `--no-install` updates the lock the moment it succeeds, so
+         * without a copy taken here there is no way back to the site's own
+         * record of itself — and a rollback that restores the files but not the
+         * lock leaves a site whose manifest describes work that was undone.
+         *
+         * 🚨 Taken ONCE, and a retry starts from it. A resolve killed part-way
+         * — a host's time limit, a proxy timeout — can leave composer.json
+         * edited by `require` and the lock half-way to new. Copying again on
+         * the retry would save THAT as "before", and the rollback would put
+         * back the broken state; resolving on top of it would plan from it.
+         */
+        $this->startFromSaved();
+        $before = $this->readJson($this->workDir . '/composer.lock.before');
+
+        $inProcess = $this->composer->inProcess();
+
+        if ($inProcess) {
+            $blockers = (new NeedsGit($this->installPath, $this->composer->composerHome()))->blockers();
+
+            if ($blockers !== []) {
+                throw new RuntimeException(NeedsGit::explain($blockers));
+            }
+        }
+
+        /*
+         * 🚨 `require` for an install, `update` for an update, and they are not
+         * interchangeable: running `update` on a package that is not installed
+         * does nothing whatsoever and exits 0. The run would sail through every
+         * phase, change nothing, and report success — the exact silent failure
+         * this whole extension exists to stop.
+         *
+         * `require --no-install` writes composer.json as well as the lock, and
+         * reverts its own edit if the resolve fails. composer.json.before is
+         * saved above so a rollback after a SUCCESSFUL resolve can undo it too.
+         */
+        $args = match ($this->mode) {
+            'install' => array_merge(['require'], $this->requested, ['--no-install', '--no-scripts']),
+            /*
+             * 🚨 `remove` takes the package out of composer.json AND re-resolves
+             * the lock, which is what makes the dependencies it dragged in go
+             * too. `--no-install` stops Composer touching vendor: the removal
+             * happens through the same journalled apply as everything else, so
+             * the files go to the trash rather than being deleted and an
+             * uninstall is as reversible as an update.
+             */
+            'remove'  => array_merge(['remove'], $this->requested, ['--no-install', '--no-scripts']),
+            /*
+             * 🚨 `-w`, NOT `-W`.
+             *
+             * `--with-all-dependencies` also updates packages that are ROOT
+             * requirements — so asking to update one extension moved twenty-five
+             * unrelated packages on a live forum: the whole illuminate stack,
+             * commonmark, monolog. Nobody chose that, the extension being
+             * updated did not need it, and on a site that had just been
+             * carefully pinned it was precisely the thing the pinning existed
+             * to prevent.
+             *
+             * `--with-dependencies` still lets a package's own dependencies move
+             * when the new version needs them, which is the case that made -W
+             * look necessary. What it will not do is quietly re-resolve things
+             * the admin has deliberately fixed. If an update genuinely requires
+             * a root requirement to move, Composer now says so and the admin
+             * decides — which is the whole posture of this extension.
+             */
+            default   => array_merge(['update'], $this->requested, ['--with-dependencies', '--no-install']),
+        };
+
+        $raised = $this->raisePins();
+
+        $result = $inProcess ? $this->resolveInProcess($args) : $this->composer->run($args);
+        $after  = $this->readJson($lockPath);
+
+        if ($result['code'] !== 0 && ! $this->didWhatWasAsked($before, $after)) {
+            // Composer's own words, not a summary of them: it is usually precise
+            // about which constraint could not be satisfied, and paraphrasing
+            // that loses the only part anyone can act on.
+            throw new RuntimeException("Composer could not work out an update:\n" . $result['output']);
+        }
+
+        /*
+         * 🚨 The new lock is put back immediately. Composer has already written
+         * it, and leaving it in place while the packages on disk are still the
+         * old ones would mean a lock that disagrees with vendor/ — which the
+         * next resolve would silently build on. The plan we just computed is the
+         * record of what has to happen to make them agree again.
+         */
+        $changes = (new LockDiff())->between($before, $after);
+        $sources = (new LockDiff())->sources($after);
+        $reasons = (new LockDiff())->reasons($changes, $after, $this->requested);
+
+        file_put_contents($this->workDir . '/plan.json', json_encode([
+            'changes' => array_map(fn (Change $c) => $c->toArray(), $changes),
+            'sources' => $sources,
+            'reasons' => $reasons,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        if ($changes === []) {
+            return match ($this->mode) {
+                'install' => 'Nothing changed — that package is already installed at this version.',
+                'remove'  => 'Nothing changed — that package was not a direct requirement of this site.',
+                default   => $this->whyNothingMoved(),
+            };
+        }
+
+        $note = count($changes) . ' package(s) will change';
+
+        return $raised === [] ? $note : implode('; ', $raised) . '. ' . $note;
+    }
+
+    /**
+     * How many times a resolve killed by the host is tried before giving up.
+     *
+     * 🚨 Six, from a measurement rather than a feeling: on dev's real
+     * composer.json (346 packages, 22 private GitHub repositories) a cold
+     * in-process resolve took 144s and a warm one 27s. Each killed attempt
+     * keeps what it downloaded, so a host that cuts requests at 30 seconds gets
+     * there in about five tries; three would give up on it with the cache
+     * nearly full.
+     */
+    private const RESOLVE_ATTEMPTS = 6;
+
+    /**
+     * Copy the manifests aside the first time; put them back on every retry.
+     */
+    private function startFromSaved(): void
+    {
+        foreach (['composer.lock', 'composer.json'] as $file) {
+            $saved = $this->workDir . '/' . $file . '.before';
+            $live = $this->installPath . '/' . $file;
+
+            if (is_file($saved)) {
+                if (@file_get_contents($saved) !== @file_get_contents($live)) {
+                    self::replaceFile($saved, $live);
+                }
+            } elseif (! copy($live, $saved)) {
+                throw new RuntimeException("Could not save a copy of $file before resolving, so nothing was started.");
+            }
+        }
+    }
+
+    /**
+     * The resolve, inside this request — and what happens when the host kills
+     * the request before Composer finishes.
+     *
+     * 🚨 On shared hosting the request has a time limit Millwright may not be
+     * allowed to lift, and a proxy in front of it may cut it off regardless. A
+     * kill there is not a failure of the update, so it must not look like one:
+     *
+     *   - A shutdown function puts composer.json and the lock back the moment
+     *     the request dies, so nothing is ever left half-written — PHP runs it
+     *     after a "Maximum execution time" or memory fatal. A kill PHP never
+     *     hears about (FPM's request_terminate_timeout, SIGKILL) is caught on
+     *     the retry instead, by startFromSaved().
+     *   - Composer keeps every package list it downloaded in COMPOSER_HOME
+     *     under storage/, so the next attempt starts warm and gets further.
+     *   - The admin page simply polls again; the next poll sees the attempt
+     *     that never came back, says so in the run's log, and tries again — up
+     *     to RESOLVE_ATTEMPTS times, then stops with a sentence naming the limit.
+     *
+     * @param list<string> $args
+     * @return array{code:int, output:string}
+     */
+    private function resolveInProcess(array $args): array
+    {
+        $path = $this->workDir . '/resolve.attempt.json';
+        $prev = is_file($path) ? (array) json_decode((string) @file_get_contents($path), true) : [];
+        $attempts = (int) ($prev['attempts'] ?? 0);
+
+        if ($attempts > 0) {
+            $how = $this->howItStopped($prev);
+
+            if ($attempts >= self::RESOLVE_ATTEMPTS) {
+                @unlink($path);
+                $this->startFromSaved();
+
+                throw new RuntimeException(
+                    'Nothing was changed. ' . $how . ' — ' . self::RESOLVE_ATTEMPTS . ' times in a row, before Composer '
+                    . 'finished working out this update. ' . $this->limitAdvice($prev)
+                );
+            }
+
+            if (empty($prev['announced'])) {
+                $prev['announced'] = true;
+                @file_put_contents($path, json_encode($prev));
+
+                throw new NotYet(
+                    $how . ' before Composer finished. Nothing was changed. Trying again (attempt '
+                    . ($attempts + 1) . ' of ' . self::RESOLVE_ATTEMPTS . '); Composer kept what it had already '
+                    . 'downloaded, so this attempt starts further along.'
+                );
+            }
+        }
+
+        $started = microtime(true);
+        @file_put_contents($path, json_encode(['attempts' => $attempts + 1, 'announced' => false, 'startedAt' => $started]));
+
+        $done = false;
+        $workDir = $this->workDir;
+        $installPath = $this->installPath;
+
+        register_shutdown_function(static function () use (&$done, $path, $started, $workDir, $installPath): void {
+            if ($done) {
+                return;
+            }
+
+            foreach (['composer.lock', 'composer.json'] as $file) {
+                if (is_file("$workDir/$file.before")) {
+                    self::replaceFile("$workDir/$file.before", "$installPath/$file");
+                }
+            }
+
+            $error = error_get_last();
+            $message = (string) ($error['message'] ?? '');
+            $record = (array) json_decode((string) @file_get_contents($path), true);
+            $record['stopped'] = match (true) {
+                str_contains($message, 'Maximum execution time') => 'time',
+                str_contains($message, 'Allowed memory size') => 'memory',
+                default => 'unknown',
+            };
+            $record['seconds'] = (int) round(microtime(true) - $started);
+            $record['timeLimit'] = (int) ini_get('max_execution_time');
+            $record['memoryLimit'] = (string) ini_get('memory_limit');
+            @file_put_contents($path, json_encode($record));
+        });
+
+        try {
+            return $this->composer->run($args);
+        } finally {
+            $done = true;
+            @unlink($path);
+        }
+    }
+
+    /** @param array<string,mixed> $attempt */
+    private function howItStopped(array $attempt): string
+    {
+        $seconds = (int) ($attempt['seconds'] ?? 0);
+
+        return match ($attempt['stopped'] ?? null) {
+            'time'   => 'This host stopped the request after ' . (int) ($attempt['timeLimit'] ?? $seconds) . ' seconds',
+            'memory' => 'This host stopped the request when it reached its memory limit ('
+                . (string) ($attempt['memoryLimit'] ?? '?') . ')',
+            'unknown' => 'The web server stopped the request after about ' . $seconds . ' seconds',
+            default  => 'The web server stopped the request',
+        };
+    }
+
+    /** @param array<string,mixed> $attempt */
+    private function limitAdvice(array $attempt): string
+    {
+        return match ($attempt['stopped'] ?? null) {
+            'memory' => 'Ask your host to raise memory_limit for this site (256 MB is plenty), or update fewer '
+                . 'extensions at once.',
+            default  => 'Composer keeps what it downloads, so pressing Update again later often gets further. If it '
+                . 'keeps stopping, ask your host to raise max_execution_time for this site (120 seconds is plenty), '
+                . 'or to allow proc_open so Composer can run in its own process.',
+        };
+    }
+
+    /** Copy beside, then rename over: never a half-written file in place. */
+    private static function replaceFile(string $from, string $to): bool
+    {
+        $tmp = $to . '.millwright-' . bin2hex(random_bytes(3));
+
+        if (! @copy($from, $tmp) || ! @rename($tmp, $to)) {
+            @unlink($tmp);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Raise the requirements this run was authorised to raise.
+     *
+     * 🚨 composer.json is edited BEFORE the resolve, and only for packages the
+     * admin was shown. `composer.json.before` is already saved a few lines
+     * above, and Rollback restores it — so an update that raises a pin and then
+     * fails puts the requirement back with everything else.
+     *
+     * 🚨 It raises to an EXACT version, never to a range. A site that pinned
+     * `3.5.1` deliberately stays pinned at `3.6.0`; quietly converting it to
+     * `^3.6` would hand back the drift the pin was there to stop, as a side
+     * effect of an unrelated click.
+     *
+     * @return list<string> what changed, for the log
+     */
+    private function raisePins(): array
+    {
+        if ($this->repin === [] || $this->mode !== 'update') {
+            return [];
+        }
+
+        $path = $this->installPath . '/composer.json';
+        $json = $this->readJson($path);
+        $raised = [];
+
+        foreach ($this->repin as $package => $version) {
+            $current = $json['require'][$package] ?? null;
+
+            // Only ever touch a package this run was actually asked about, and
+            // only one the site really does require.
+            if (! is_string($current) || ! in_array($package, $this->requested, true)) {
+                continue;
+            }
+
+            if ($current === $version) {
+                continue;
+            }
+
+            $json['require'][$package] = $version;
+            $raised[] = sprintf('%s required at %s instead of %s', $package, $version, $current);
+        }
+
+        if ($raised === []) {
+            return [];
+        }
+
+        file_put_contents($path, json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+
+        return $raised;
+    }
+
+    /**
+     * Why an update changed nothing.
+     *
+     * 🚨 "Everything is already at the newest version it can be" is true and
+     * useless, and on a pinned forum it is actively misleading.
+     *
+     * A site that pins `ernestdefoe/page-builder` to `3.5.1` will be told by the
+     * update check that 3.6.0 exists — correctly, it does — and pressing Update
+     * then runs a resolve that cannot move it, because the constraint forbids
+     * it. The run reported Finished, the card still said an update was
+     * available, and nothing anywhere said why. Somebody would press it again.
+     *
+     * So when a requested package did not move, name its constraint. The admin
+     * can then do the one thing that would help.
+     */
+    private function whyNothingMoved(): string
+    {
+        $json = $this->readJson($this->installPath . '/composer.json');
+        $pinned = [];
+
+        foreach ($this->requested as $package) {
+            $constraint = $json['require'][$package] ?? null;
+
+            if (! is_string($constraint)) {
+                continue;
+            }
+
+            /*
+             * A constraint with no wildcard, caret or tilde admits exactly one
+             * version, so a newer one can never satisfy it. Ranges are left out:
+             * those genuinely can be "already newest".
+             */
+            if (preg_match('/^v?\d+\.\d+\.\d+/', $constraint) && ! preg_match('/[\^~*|]|\s-\s/', $constraint)) {
+                $pinned[] = $package . ' is pinned to ' . $constraint;
+            }
+        }
+
+        if ($pinned === []) {
+            return 'Nothing to update — everything is already at the newest version it can be.';
+        }
+
+        return 'Nothing moved, because ' . implode('; ', $pinned)
+            . '. A newer version cannot be installed until that requirement is changed.';
+    }
+
+    /**
+     * Did the command achieve what it was asked to, whatever it says?
+     *
+     * 🚨 Only consulted when the exit code is non-zero, and only for a removal.
+     * `composer remove --no-install` updates composer.json and the lock exactly
+     * as wanted, and THEN checks whether the package has gone from vendor —
+     * which it has not, because --no-install is us telling Composer not to touch
+     * vendor. It reports "Removal failed, X is still present" and exits 1,
+     * having done the job perfectly.
+     *
+     * Reading the outcome rather than the exit code is the honest way out. The
+     * lock is the thing that matters, we already have it before and after, and
+     * a removal that did not happen fails this check and reports Composer's own
+     * words as before.
+     *
+     * @param array<string,mixed> $before
+     * @param array<string,mixed> $after
+     */
+    private function didWhatWasAsked(array $before, array $after): bool
+    {
+        if ($this->mode !== 'remove' || $this->requested === []) {
+            return false;
+        }
+
+        $names = fn (array $lock) => array_column((array) ($lock['packages'] ?? []), 'name');
+
+        $was = $names($before);
+        $now = $names($after);
+
+        foreach ($this->requested as $package) {
+            if (! in_array($package, $was, true) || in_array($package, $now, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function fetchOne(string $package): string
+    {
+        $plan = $this->planFile();
+        $source = $plan['sources'][$package] ?? null;
+
+        if ($source === null) {
+            throw new RuntimeException(
+                "There is no downloadable archive for $package. It is probably installed from source or a path repository, which Millwright cannot fetch."
+            );
+        }
+
+        $this->fetcher->fetch($package, $source);
+
+        return "downloaded $package";
+    }
+
+    private function applyOne(string $package): string
+    {
+        foreach ($this->plan() as $change) {
+            if ($change->package === $package) {
+                return $this->applier->applyOne($change);
+            }
+        }
+
+        throw new RuntimeException("$package is not in the plan.");
+    }
+
+    /**
+     * Remove rollback copies no rollback can reach any more.
+     *
+     * 🚨 Never fails the run, and never takes long. The update is finished and
+     * verified by now; housekeeping that throws must not turn it red and offer
+     * to undo correct work, so a failure is reported in the log and left for
+     * the nightly prune. The time budget keeps a host that cuts requests at 30
+     * seconds from killing this step mid-way — what is left is picked up later.
+     */
+    private function tidyTrash(): string
+    {
+        if ($this->storagePath === '') {
+            return 'Old rollback copies were not tidied: no storage path is known here.';
+        }
+
+        try {
+            $dir = $this->storagePath . '/millwright';
+            $summary = (new Pruner($dir, new Retention($dir)))->prune('finished update', 10.0);
+        } catch (\Throwable $e) {
+            return 'Old rollback copies were left for the nightly tidy: ' . $e->getMessage();
+        }
+
+        if ($summary['removed'] === 0) {
+            return 'No old rollback copies to remove.';
+        }
+
+        return sprintf(
+            'Removed %d old rollback %s, freeing %s.%s',
+            $summary['removed'],
+            $summary['removed'] === 1 ? 'copy' : 'copies',
+            Pruner::human((int) $summary['freed']),
+            $summary['complete'] ? '' : ' The rest will be tidied tonight.'
+        );
+    }
+
+    /** Longer than this and telling the truth beats parking the admin screen. */
+    private const WAIT_CAP = 180;
+
+    private function finalise(string $item, Run $run): string
+    {
+        return match ($item) {
+            'register'   => $this->register(),
+            'migrations' => $this->flarum('migrate', 'migrations run'),
+            'assets'     => $this->flarum('assets:publish', 'assets published'),
+            'caches'     => $this->clearCaches(),
+            'check the site again' => $this->verify($run),
+            'tidy the trash'       => $this->tidyTrash(),
+            /*
+             * 🚨 Last, and it is the step that decides whether any of the others
+             * were visible. On a host with opcache.validate_timestamps off, every
+             * phase above can succeed and the site carries on serving the old
+             * compiled code until PHP is restarted — an update that reports
+             * success and changed nothing anybody can see.
+             */
+            'code cache' => $this->codeCache(),
+            default      => 'nothing to do',
+        };
+    }
+
+    /**
+     * 🚨 `install`, not `dump-autoload`, and the difference is whether the
+     * update exists at all.
+     *
+     * Composer's record of what is installed is vendor/composer/installed.json,
+     * not composer.lock — and `dump-autoload` regenerates the autoloader FROM
+     * that record. So a package this pipeline placed by hand was autoloaded by
+     * nothing and invisible to Flarum: the files were right, the lock was right,
+     * every phase reported success, and the extension simply did not appear.
+     * Found by installing one on a real forum and looking for it afterwards.
+     *
+     * `install` reconciles the record with the lock. It is cheap because the
+     * tree already agrees — measured at 2.2s for a one-package change on a
+     * 226-package forum, touching only what moved.
+     *
+     * 🚨 It does re-extract the packages this run changed, because Composer
+     * trusts its own record rather than the disk. That is a known cost and it
+     * is worth it: the staged apply is what makes the RISKY window atomic and
+     * reversible, and this runs afterwards, against a tree that is already
+     * consistent, where being killed costs a rerun rather than a broken site.
+     */
+    /**
+     * Clear Flarum's caches, and leave the formatter able to render.
+     *
+     * 🚨 `cache:clear` on its own takes post rendering down, and this is not a
+     * race — it happens every time on any forum whose cache driver is not the
+     * file store, which is every forum running fof/redis.
+     *
+     * The formatter is two halves that must agree: a serialized renderer cached
+     * under `flarum.formatter`, and the generated
+     * storage/formatter/Renderer_<hash>.php it is an instance of. cache:clear
+     * unlinks that file and flushes the APPLICATION cache — but core gives the
+     * formatter its own FileStore, so the entry survives in a different store,
+     * names a class whose file is gone, and every post render dies with
+     * `__PHP_Incomplete_Class`. `rememberForever` means nothing fixes it later.
+     *
+     * 🚨 An earlier version of this method deleted storage/formatter/*.php
+     * itself, on the theory that clearing both halves left a consistent state.
+     * That was precisely backwards: deleting the file while the entry survives
+     * IS the break, so it manufactured the failure it was written to prevent —
+     * twice per run. Two live sites went down that way.
+     *
+     * The repair command forgets the entry through the formatter's OWN cache and
+     * rebuilds both halves together.
+     */
+    private function clearCaches(): string
+    {
+        $this->flarum('cache:clear', 'cleared');
+        $this->flarum('millwright:repair-formatter', 'formatter rebuilt');
+
+        return 'caches cleared and the formatter rebuilt';
+    }
+
+    /**
+     * 🚨 Never fails the run.
+     *
+     * By this point the files are updated, the lock is updated, and Composer's
+     * record agrees with both. A compiled-code cache that could not be cleared
+     * is a thing to TELL somebody about, not a reason to mark a completed update
+     * as failed and offer to roll back work that was correct.
+     */
+    /**
+     * What the site was doing BEFORE we touched anything.
+     *
+     * 🚨 Without this, an automatic rollback is a liability rather than a
+     * safety net. A site that was already down for its own reasons — a bad
+     * config, a full disk, a database that went away — would fail the check
+     * afterwards too, and the update would be blamed and undone for a fault it
+     * had nothing to do with. Worse, so would a host where the check itself
+     * cannot run: no curl, no outbound DNS, a URL that resolves to somewhere
+     * else. On any of those the honest answer is "this update will not be
+     * judged by whether the site answers", and the only way to know is to have
+     * asked before.
+     */
+    private function baseline(): string
+    {
+        $health = $this->health();
+
+        if ($health === null) {
+            $this->rememberHealth('unchecked');
+
+            return 'No site address is configured, so this update will not be judged by whether the site answers.';
+        }
+
+        $result = $health->check(2);
+        $this->rememberHealth($result['ok'] ? 'ok' : 'down');
+
+        return $result['ok']
+            ? 'The site is answering before we start.'
+            : 'The site was already not answering before this update started (' . $result['why']
+                . '), so this update will not be judged by whether it answers afterwards.';
+    }
+
+    /**
+     * Did this update break the site? If so, put it back and say why.
+     *
+     * 🚨 This is the last item on purpose. It runs after the code cache step
+     * has waited for the web tier to be serving the new files, so what it asks
+     * is a real question: a check that ran before then would be asking whether
+     * the OLD code still works, and would pass every time.
+     */
+    private function verify(Run $run): string
+    {
+        $health = $this->health();
+        $before = $this->rememberedHealth();
+
+        if ($health === null || $before === 'unchecked') {
+            return 'The site was not checked, because there is no way to reach it from here.';
+        }
+
+        $result = $health->check(3);
+
+        switch (Verdict::from($before, $result['ok'])) {
+            case Verdict::HEALTHY:
+                return 'The site is answering normally after the update.';
+
+            case Verdict::ALREADY_BROKEN:
+                return 'The site is still not answering, but it was not answering before this update either — '
+                    . 'so this has been left in place rather than blamed for it.';
+
+            case Verdict::NOT_JUDGED:
+                return 'The site was not checked, because there is no way to reach it from here.';
+        }
+
+        /*
+         * It worked before and it does not now. The update is the difference.
+         */
+        $why = $this->storagePath === ''
+            ? null
+            : (new ErrorLog($this->storagePath))->latest(max(1, $run->startedAt));
+
+        $said = $why === null
+            ? $result['why']
+            : $result['why'] . ' The error was: ' . $why;
+
+        $restore = $this->restore();
+
+        if ($restore === null || ! $restore->possible()) {
+            throw new RuntimeException(
+                'This update stopped the site from answering, and there is nothing saved to put back. ' . $said
+            );
+        }
+
+        // Putting it back runs Composer, which must not happen in-process
+        // inside a long-lived process holding the update's classes.
+        $this->needsFreshCode();
+
+        $done = $restore->run();
+
+        $message = 'This update stopped the site from answering, so it has been put back. ' . $said;
+
+        if ($done['note'] !== null) {
+            $message .= ' ' . $done['note'];
+        }
+
+        throw new Reverted($message, $done['undone']);
+    }
+
+    private function health(): ?SiteHealth
+    {
+        return $this->siteUrl === '' ? null : new SiteHealth($this->siteUrl);
+    }
+
+    private function restore(): ?Restore
+    {
+        if ($this->vendorPath === '' || $this->storagePath === '') {
+            return null;
+        }
+
+        return new Restore(
+            $this->vendorPath,
+            $this->installPath,
+            $this->workDir,
+            $this->storagePath . '/millwright/trash',
+            $this->journal,
+            $this->composer
+        );
+    }
+
+    /**
+     * 🚨 On disk, in the run's own scratch space, because the process that
+     * takes the baseline is very often not the process that checks it again —
+     * a queue worker starts the run and an admin page polling finishes it. In
+     * memory it would simply be absent by then, which reads as "never checked"
+     * and quietly disables the whole safety net.
+     */
+    private function rememberHealth(string $state): void
+    {
+        @file_put_contents($this->workDir . '/health.before', $state);
+    }
+
+    private function rememberedHealth(): string
+    {
+        $saved = @file_get_contents($this->workDir . '/health.before');
+
+        return is_string($saved) && $saved !== '' ? trim($saved) : 'unchecked';
+    }
+
+    /**
+     * 🚨 This step WAITS, and that is the whole point of it.
+     *
+     * It used to clear what it could, return a sentence, and let the run finish.
+     * On a queue worker it cannot reach the web server's compiled-code cache at
+     * all, so the sentence it returned was "PHP will pick them up within 60
+     * seconds on its own" — and the run went green anyway.
+     *
+     * That is a completed update that is not in effect. An admin reads
+     * "Finished", enables the extension it just installed, and for the rest of
+     * that minute every request boots a database that says the extension is on
+     * against an autoloader that has never heard of it. Which is not a theory:
+     * it took a live forum down, and the log line explaining it was sitting
+     * right there in the run the whole time.
+     *
+     * So the run stays in progress until the web tier can actually see the new
+     * files. Finished now means in effect.
+     */
+    private function codeCache(): string
+    {
+        $opcache = new Opcache();
+        $situation = $opcache->situation();
+        $result = $opcache->clear();
+
+        if ($result['done']) {
+            return $result['why'];
+        }
+
+        /*
+         * Nothing to wait FOR: this host is set never to re-read files, so the
+         * change becomes live when somebody restarts PHP and not a moment
+         * before. Waiting would hang the run forever to no purpose — the honest
+         * answer is the one the clear() call already wrote.
+         */
+        if (! $situation['validates']) {
+            return $result['why'];
+        }
+
+        $live = $this->codeLiveAt(max(1, (int) $situation['freq']));
+        $left = $live - time();
+
+        if ($left > 0) {
+            /*
+             * Bounded. A host with a very long revalidate_freq would otherwise
+             * park the admin screen for as long as that window, which is worse
+             * than telling the truth and letting them restart PHP.
+             */
+            if ($left > self::WAIT_CAP) {
+                return 'The files are updated. This host re-reads them only every '
+                    . $situation['freq'] . ' second(s), which is too long to wait here — '
+                    . 'restart PHP-FPM to make the update take effect now.';
+            }
+
+            throw new NotYet(
+                'Waiting ' . $left . ' more second(s) for the web server to re-read the new files.'
+            );
+        }
+
+        return 'The web server has re-read the new files.';
+    }
+
+    /**
+     * When the web tier is guaranteed to have re-read the autoloader.
+     *
+     * 🚨 Measured from the AUTOLOADER, not from now. It is the file whose
+     * staleness actually breaks a site — a class that exists on disk and is
+     * unknown to the running process — and it stops changing at the register
+     * step, so the phases in between count towards the wait instead of being
+     * added to it.
+     *
+     * The margin is because revalidate_freq counts from when a process last
+     * checked a file, not from when the file changed, so the worst case is one
+     * full window after the write.
+     */
+    private function codeLiveAt(int $freq): int
+    {
+        $autoloader = $this->installPath . '/vendor/composer/autoload_static.php';
+        $changed = @filemtime($autoloader);
+
+        return ($changed ?: time()) + $freq + 2;
+    }
+
+    /**
+     * Refuse before anything is downloaded or moved if the run would hit a file
+     * it cannot change. See Permissions for the two half-finished runs this
+     * replaces. Skipped, not passed, when the paths were never supplied.
+     */
+    private function checkPermissions(): string
+    {
+        if ($this->vendorPath === '' || $this->storagePath === '') {
+            return 'file permissions not checked on this host';
+        }
+
+        $permissions = new Permissions($this->installPath, $this->vendorPath, $this->storagePath);
+        $blocked = $permissions->blocked($this->plan());
+
+        if ($blocked !== []) {
+            // The resolve has already rewritten these; put them back so the
+            // refusal's "Nothing was changed" is true and no rollback is owed.
+            foreach (['composer.lock', 'composer.json'] as $file) {
+                $saved = $this->workDir . '/' . $file . '.before';
+                if (is_file($saved)) {
+                    @copy($saved, $this->installPath . '/' . $file);
+                }
+            }
+
+            throw new RuntimeException($permissions->explain($blocked));
+        }
+
+        return 'every file this update changes is writable';
+    }
+
+    /**
+     * Make Composer's record and autoloader match the tree, without letting it
+     * re-extract anything. See InstalledRecord for the outage this prevents.
+     *
+     * 🚨 The dry run is the guard, not a formality. If Composer would still
+     * change files after the record is synced, something disagrees that this
+     * step does not understand — and finding that out by letting Composer
+     * delete its own dependencies is how a site goes down. Stopping here leaves
+     * the applied tree in place and rollback available.
+     */
+    private function register(): string
+    {
+        $this->needsFreshCode();
+
+        $this->raisePins();
+
+        $inProcess = $this->composer->inProcess();
+        $snapshot = $inProcess ? $this->snapshotAutoloader() : null;
+
+        try {
+            return $this->registerWith($snapshot);
+        } catch (\Throwable $e) {
+            if ($snapshot !== null) {
+                $this->restoreAutoloader($snapshot);
+            }
+
+            throw $e;
+        }
+    }
+
+    private function registerWith(?string $snapshot): string
+    {
+        (new InstalledRecord($this->installPath))->syncFromLock();
+
+        $dry = $this->composer->run(['install', '--no-scripts', '--dry-run']);
+        if ($dry['code'] !== 0) {
+            throw new RuntimeException("Composer failed:\n" . $dry['output']);
+        }
+
+        $planned = InstalledRecord::plannedOperations($dry['output']);
+        if ($planned > 0) {
+            throw new RuntimeException(
+                "Composer still wants to change $planned package(s) after the update was applied, so it was stopped "
+                . "before touching any files. Nothing is broken; roll this run back from the Millwright screen.\n"
+                . $dry['output']
+            );
+        }
+
+        if ($snapshot === null) {
+            return $this->composerCommand(['install', '--no-scripts'], 'Composer now knows about the change');
+        }
+
+        /*
+         * 🚨 In-process, the autoloader is written by THIS request, and a host
+         * that kills it mid-write would leave vendor/composer half old, half
+         * new: every page a fatal. The snapshot taken before the record was
+         * synced goes back on the way down, so a kill leaves the autoloader
+         * exactly as the apply phase left it — which rollback understands.
+         */
+        $done = false;
+        register_shutdown_function(function () use (&$done, $snapshot): void {
+            if (! $done) {
+                $this->restoreAutoloader($snapshot);
+            }
+        });
+
+        try {
+            return $this->composerCommand(['install', '--no-scripts'], 'Composer now knows about the change');
+        } finally {
+            $done = true;
+        }
+    }
+
+    /**
+     * Copy Composer's record and autoloader aside before an in-process install.
+     */
+    private function snapshotAutoloader(): string
+    {
+        $dir = $this->workDir . '/register.before';
+        $source = $this->installPath . '/vendor/composer';
+
+        if (! is_dir($dir) && ! mkdir($dir, 0775, true) && ! is_dir($dir)) {
+            throw new RuntimeException('Could not save a copy of the autoloader, so Composer was not run.');
+        }
+
+        foreach ([...(glob($source . '/*.php') ?: []), $source . '/installed.json', $this->installPath . '/vendor/autoload.php'] as $file) {
+            if (is_file($file) && ! copy($file, $dir . '/' . $this->snapshotName($file))) {
+                throw new RuntimeException('Could not save a copy of the autoloader, so Composer was not run.');
+            }
+        }
+
+        return $dir;
+    }
+
+    private function restoreAutoloader(string $dir): void
+    {
+        foreach (glob($dir . '/*') ?: [] as $saved) {
+            $name = basename($saved);
+            $target = $name === 'autoload.php'
+                ? $this->installPath . '/vendor/autoload.php'
+                : $this->installPath . '/vendor/composer/' . substr($name, strlen('composer.'));
+
+            self::replaceFile($saved, $target);
+        }
+    }
+
+    private function snapshotName(string $file): string
+    {
+        return basename(dirname($file)) === 'composer' ? 'composer.' . basename($file) : basename($file);
+    }
+
+    private function composerCommand(array $args, string $note): string
+    {
+        $raised = $this->raisePins();
+
+        $result = $this->composer->run($args);
+
+        if ($result['code'] !== 0) {
+            throw new RuntimeException("Composer failed:\n" . $result['output']);
+        }
+
+        return $note;
+    }
+
+    private function flarum(string $command, string $note): string
+    {
+        /*
+         * 🚨 After the swap, and in a process that has the new code: its own
+         * process where the host allows one; otherwise this request, which
+         * needsFreshCode() has made sure started after the swap and after
+         * opcache let go of the old files. Booting Flarum's commands inside the
+         * request that replaced its files would load a half-old, half-new class
+         * map.
+         *
+         * 🚨 Through the same PhpBinary the Composer phases use. When these
+         * disagreed, an update could get through planning, downloading and the
+         * swap — every expensive, risky part — and then fail on the last phase
+         * because this one alone was spawned with a binary that cannot run a
+         * script. Under FPM, PHP_BINARY is php-fpm.
+         */
+        $this->needsFreshCode();
+
+        $result = (new FlarumCommand($this->installPath, $this->composer))->run($command);
+
+        if ($result['code'] !== 0) {
+            $lines = explode("\n", $result['output']);
+
+            throw new RuntimeException("`flarum $command` failed:\n" . implode("\n", array_slice($lines, -12)));
+        }
+
+        return $note;
+    }
+
+    /**
+     * Wait for a fresh request before running post-swap code in this process.
+     * A no-op wherever a subprocess does the work.
+     */
+    private function needsFreshCode(): void
+    {
+        if (! $this->composer->canSpawn()) {
+            (new FreshCode($this->workDir, $this->installPath, new Opcache()))->ensure();
+        }
+    }
+
+    /** @return list<Change> */
+    private function plan(): array
+    {
+        return array_map(
+            fn (array $row) => Change::fromArray($row),
+            $this->planFile()['changes'] ?? []
+        );
+    }
+
+    /** @return list<Change> */
+    private function downloadable(): array
+    {
+        $sources = $this->planFile()['sources'] ?? [];
+
+        return array_values(array_filter(
+            $this->plan(),
+            fn (Change $c) => $c->op !== Change::REMOVE && isset($sources[$c->package])
+        ));
+    }
+
+    /** @return array<string,mixed> */
+    private function planFile(): array
+    {
+        $path = $this->workDir . '/plan.json';
+
+        if (! is_file($path)) {
+            return [];
+        }
+
+        return (array) json_decode((string) file_get_contents($path), true);
+    }
+
+    /** @return array<string,mixed> */
+    private function readJson(string $path): array
+    {
+        return (array) json_decode((string) file_get_contents($path), true);
+    }
+}
