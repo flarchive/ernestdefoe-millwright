@@ -1,0 +1,59 @@
+{
+    "name": "ernestdefoe/millwright",
+    "description": "Install, update and roll back Flarum extensions and Flarum itself, on any host including shared hosting. Nothing is deleted; every step is a checkpoint, so an interrupted update loses progress, never your site.",
+    "keywords": [
+        "flarum",
+        "flarum-extension",
+        "composer",
+        "updates",
+        "rollback"
+    ],
+    "type": "flarum-extension",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "ernestdefoe",
+            "email": "ernestdefoe@gmail.com"
+        }
+    ],
+    "homepage": "https://github.com/ernestdefoe/millwright",
+    "support": {
+        "issues": "https://github.com/ernestdefoe/millwright/issues",
+        "source": "https://github.com/ernestdefoe/millwright"
+    },
+    "require": {
+        "php": "^8.3",
+        "flarum/core": "^2.0",
+        "composer/composer": "^2.7"
+    },
+    "require-dev": {
+        "flarum/phpstan": "^2.0@rc",
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ErnestDefoe\\Millwright\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ErnestDefoe\\Millwright\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "extra": {
+        "flarum-extension": {
+            "title": "Millwright",
+            "category": "feature",
+            "icon": {
+                "name": "fas fa-screwdriver-wrench",
+                "backgroundColor": "#b0561f",
+                "color": "#fff"
+            }
+        }
+    }
+}
