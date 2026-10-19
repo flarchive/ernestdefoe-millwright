@@ -1,0 +1,97 @@
+# Nothing was running the tests.
+#
+# 🚨 This extension rewrites vendor/ on somebody else's forum. A good deal of
+# its test suite exists because a specific failure reached a live site, and none
+# of it ran on push — so a change could break any of it and the only signal
+# would have been an admin watching their site go down.
+#
+# Everything here gates the code that ships, including the two things that are
+# easy to get wrong quietly: the committed JS bundle drifting from its source,
+# and a stylesheet that compiles under node but not under the compiler Flarum
+# actually uses.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: PHP tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install
+        run: composer install --no-interaction --prefer-dist
+
+      # 160 tests, including the ones that exist because a real site broke:
+      # crash recovery, resumability, symlink safety, the rollback rule, and
+      # the wiring test that proves the safety nets are actually connected.
+      - name: Test
+        run: vendor/bin/phpunit
+
+      # The same bar as Flarum's own monorepo: level 6 with flarum/phpstan, so
+      # moving this into the Flarum org is a move, not a clean-up project.
+      - name: Static analysis
+        run: vendor/bin/phpstan analyse --memory-limit=2G --no-progress
+
+  js:
+    name: JS tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: js
+    steps:
+      - uses: actions/checkout@v4
+
+      # 🚨 Composer, in the JS job. `flarum/*` type declarations ship inside
+      # flarum/core, so without vendor/ present the typecheck cannot resolve a
+      # single Flarum import and fails on every file. It passes locally purely
+      # because a developer already has vendor/ — which is exactly the kind of
+      # difference that makes a green machine and a red CI.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - name: Install PHP dependencies (for Flarum's TypeScript declarations)
+        working-directory: .
+        run: composer install --no-interaction --prefer-dist
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run check-typings
+
+      - name: Test
+        run: npm test
+
+      # 🚨 js/dist is committed and is what forums actually run. A tag cut
+      # without rebuilding ships source and bundle that disagree, and the
+      # symptom appears somewhere unrelated — an extension whose fix "did not
+      # take" for reasons nobody can find.
+      - name: The committed bundle matches its source
+        run: |
+          npm run build
+          if ! git diff --quiet -- dist; then
+            echo "::error title=Stale bundle::js/dist does not match js/src. Run 'npm run build' in js/ and commit the result."
+            git diff --stat -- dist
+            exit 1
+          fi
