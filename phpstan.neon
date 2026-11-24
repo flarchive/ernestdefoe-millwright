@@ -1,0 +1,12 @@
+# The same bar as Flarum's own monorepo: PHPStan level 6 with Flarum's extension.
+includes:
+  - vendor/flarum/phpstan/extension.neon
+
+parameters:
+  level: 6
+  paths:
+    - src
+    - extend.php
+  # Flarum's extension boots a test install per worker; in parallel they collide.
+  parallel:
+    maximumNumberOfProcesses: 1
